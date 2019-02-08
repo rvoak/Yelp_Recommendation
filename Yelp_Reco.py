@@ -2,51 +2,41 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
 import json
 import pandas as pd
 from glob import glob
 import nltk
 from nltk.corpus import stopwords
 import string
-
 import seaborn as sns
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.model_selection import train_test_split
 from sklearn.metrics.pairwise import linear_kernel
-
-import nltk, string
 from sklearn.feature_extraction.text import TfidfVectorizer
-
 import pickle
 
-df_business = pd.read_csv("yelp_business.csv")
-df_review = pd.read_csv("yelp_review.csv")
-df_business.drop("neighborhood", axis = 1, inplace =True)
-df_business.dropna(inplace = True)
-df_review=df_review.rename(columns = {'stars':'review_rating'})
-df_review.dropna(inplace = True)
-temp_df=df_review.groupby("business_id")["review_id"].count().reset_index()
-temp_df=temp_df[temp_df['review_id']>70]
-temp_df.set_index('business_id')
 
-get_ipython().run_line_magic('matplotlib', 'inline')
-axes = sns.distplot(temp_df['review_id'])
-axes.set_xlim([0,500])
-plt.xticks([50,100,150,200,250,300,350,400,450,500])
+def load_and_preprocess():
+    df_business = pd.read_csv("yelp_business.csv")
+    df_review = pd.read_csv("yelp_review.csv")
+    df_business.drop("neighborhood", axis = 1, inplace =True)
+    df_business.dropna(inplace = True)
+    df_review=df_review.rename(columns = {'stars':'review_rating'})
+    df_review.dropna(inplace = True)
+    temp_df=df_review.groupby("business_id")["review_id"].count().reset_index()
+    temp_df=temp_df[temp_df['review_id']>70]
+    temp_df.set_index('business_id')
+    return temp_df
 
-df_review=df_review[df_review['business_id'].isin(temp_df['business_id'])]
-df_business["categories"]=df_business["categories"].str.split(";")
-df_new=df_business.copy()
+def show_init_plot(temp_df):
+    get_ipython().run_line_magic('matplotlib', 'inline')
+    axes = sns.distplot(temp_df['review_id'])
+    axes.set_xlim([0,500])
+    plt.xticks([50,100,150,200,250,300,350,400,450,500])
 
 def is_restaurant(cat):
     return ('Restaurants' in cat)
-
-df_business['is_restaurant']=df_business['categories'].apply(is_restaurant)
-df_business=df_business[df_business['is_restaurant']]
-df_business.drop('is_restaurant',axis=1,inplace=True)
-merged_df = pd.merge(df_business, df_review, left_on = ["business_id"], right_on = ["business_id"], how = "inner")
 
 def has_offers(review):
     to_search=['offers','discount','deals']
@@ -55,16 +45,12 @@ def has_offers(review):
             return True
     return False
 
-merged_df['OFFERS-DISCOUNTS']=merged_df['text'].apply(has_offers)
-
 def is_date_spot(review):
     to_search=['romantic','couple','date','sex','tinder']
     for word in to_search:
         if(word in review):
             return True
     return False
-
-merged_df['DATE SPOT']=merged_df['text'].apply(is_date_spot)
 
 def is_sports(review):
     to_search=['sports','baseball','rugby','game','football']
@@ -73,8 +59,6 @@ def is_sports(review):
             return True
     return False
 
-merged_df['SPORTS BAR']=merged_df['text'].apply(is_sports)
-
 def is_waffle(review):
     to_search=['waffle']
     for word in to_search:
@@ -82,9 +66,21 @@ def is_waffle(review):
             return True
     return False
 
-merged_df['WAFFLES']=merged_df['text'].apply(is_waffle)
+def merge_and_preprocess(df_business,df_review):
+    merged_df = pd.merge(df_business, df_review, left_on = ["business_id"], right_on = ["business_id"], how = "inner")
+    merged_df['OFFERS-DISCOUNTS']=merged_df['text'].apply(has_offers)
+    merged_df['DATE SPOT']=merged_df['text'].apply(is_date_spot)
+    merged_df['SPORTS BAR']=merged_df['text'].apply(is_sports)
+    merged_df['WAFFLES']=merged_df['text'].apply(is_waffle)
+    return merged_df
 
-yelp_class = merged_df[(merged_df['state'] == "OH") ]
+def filter_by_state(merged_df,ST):
+    yelp_class = merged_df[(merged_df['state'] == ST) ]
+    return yelp_class
+
+
+
+
 
 def text_process(text):
     """
@@ -126,9 +122,7 @@ def Multinomial_Naive_Bayes():
     print('\n')
     print(classification_report(y_test, preds))
 
-new_merged_df = merged_df.reset_index(drop=True)
-z = merged_df["text"]
-new_df = z.reset_index(drop=True)
+
 
 def tokens(x):
     return x.split(',')
@@ -138,18 +132,40 @@ def get_vectorizer(train):
     X = vectorizer.fit_transform(train)
     return X, vectorizer
 
-tfidf, vectorizer = get_vectorizer(new_df)
-name = [input("Enter Query: ")]
-tfidf_name = vectorizer.transform(name)
+def preprocess_review_business(df_review,df_business,temp_df):
+    df_review=df_review[df_review['business_id'].isin(temp_df['business_id'])]
+    df_business["categories"]=df_business["categories"].str.split(";")
+    df_new=df_business.copy()
+    df_business['is_restaurant']=df_business['categories'].apply(is_restaurant)
+    df_business=df_business[df_business['is_restaurant']]
+    df_business.drop('is_restaurant',axis=1,inplace=True)
+    return df_review,df_business
+    
 
-#Calculating the cosine distance between the review entered by the user and the all the reviews in the dataset
+def main():
+    
+    temp_df=load_and_preprocess()
+    df_review,df_business=preprocess_review_business(df_review,df_business,temp_df)
+    merged_df=merge_and_preprocess(df_business,df_review)
+    
+    yelp_class=filter_by_state(merged_df,'OH')
+    
+    new_merged_df = merged_df.reset_index(drop=True)
+    z = merged_df["text"]
+    new_df = z.reset_index(drop=True)
+    tfidf, vectorizer = get_vectorizer(new_df)
+    
+    name = [input("Enter Query: ")]
+    tfidf_name = vectorizer.transform(name)
 
-cosine_similarities = linear_kernel(tfidf_name, tfidf).flatten()
-related_reviews_indices = cosine_similarities.argsort()[:-10:-1]
-cosine_similarities[related_reviews_indices]
+    #Calculating the cosine distance between the review entered by the user and the all the reviews in the dataset
 
-#Displaying the final restaurants that had similar reviews
-new_merged_df["name"][related_reviews_indices]
+    cosine_similarities = linear_kernel(tfidf_name, tfidf).flatten()
+    related_reviews_indices = cosine_similarities.argsort()[:-10:-1]
+    cosine_similarities[related_reviews_indices]
+
+    #Displaying the final restaurants that had similar reviews
+    new_merged_df["name"][related_reviews_indices]
 
 
 
